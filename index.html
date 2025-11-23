@@ -1,92 +1,418 @@
-function doPost(e) {
-  var ROOT_FOLDER_NAME = "Finance_Tracker_Receipts"; 
-
-  try {
-    var data = JSON.parse(e.postData.contents);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FinTrack Pro</title>
     
-    // ----------------------------------------------------------------
-    // 1. ROUTING LOGIC
-    // ----------------------------------------------------------------
-    var sheetName = "General_Log";
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0f172a">
     
-    if (data.type === 'payment') {
-      sheetName = "Payments_Log";
-    } else {
-      sheetName = "Receipts_Log";
-    }
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    var sheet = ss.getSheetByName(sheetName);
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      var headers = ["Timestamp", "Type", "Company/Person", "Amount", "Mode", "Category", "Description", "Image Evidence", "Device Info"];
-      sheet.appendRow(headers);
-      sheet.setFrozenRows(1);
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground(data.type === 'payment' ? "#fecaca" : "#bbf7d0");
-    }
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 
-    // ----------------------------------------------------------------
-    // 2. FOLDER SEGREGATION
-    // ----------------------------------------------------------------
-    var imageUrl = "No Image";
-    
-    if (data.image && data.image.length > 100) {
-      try {
-        var rootFolder = getOrCreateFolder(DriveApp, ROOT_FOLDER_NAME);
-        var yearStr = new Date().getFullYear().toString();
-        var monthStr = (new Date().getMonth() + 1).toString();
-        
-        var yearFolder = getOrCreateFolder(rootFolder, yearStr);
-        var monthFolder = getOrCreateFolder(yearFolder, monthStr);
-        
-        var typeFolder = getOrCreateFolder(monthFolder, data.type || "Unsorted");
-        
-        // Clean Company Name for Filename
-        var cleanCompany = (data.company_name || "Unknown").replace(/[^a-zA-Z0-9]/g, "").substring(0, 15);
-        var fileName = data.amount + "_" + cleanCompany + "_" + Date.now() + ".jpg"; 
-        
-        var encodedImage = data.image.split(',')[1]; 
-        var blob = Utilities.newBlob(Utilities.base64Decode(encodedImage), MimeType.JPEG, fileName);
-        
-        var file = typeFolder.createFile(blob);
-        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-        imageUrl = file.getUrl();
-        
-      } catch (imgError) {
-        imageUrl = "Error Saving Image: " + imgError.toString();
-      }
-    }
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f1f5f9; height: 100dvh; width: 100vw; overflow: hidden; position: fixed; }
+        #root { height: 100%; width: 100%; }
+        .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        textarea::-webkit-scrollbar { width: 4px; }
+        .animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-    // ----------------------------------------------------------------
-    // 3. LOGGING
-    // ----------------------------------------------------------------
-    sheet.appendRow([
-      data.timestamp,
-      data.type.toUpperCase(),
-      data.company_name, 
-      data.amount,
-      data.payment_mode, 
-      data.category,
-      data.description,
-      imageUrl,
-      "Mobile Web App"
-    ]);
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const ADMIN_PIN = "8888";
 
-    return ContentService.createTextOutput(JSON.stringify({status: "success", sheet: sheetName}))
-      .setMimeType(ContentService.MimeType.JSON);
+        const Icons = {
+            Wallet: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>,
+            ArrowUp: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>,
+            ArrowDown: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>,
+            Camera: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
+            Image: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
+            Clipboard: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>,
+            FileText: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+            Check: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+            Alert: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+            Settings: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+            Trash: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
+            CloudUpload: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>,
+            Plus: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+            Building: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="21" width="18" height="2"></rect><path d="M5 21V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v14"></path><polyline points="8 21 8 12 16 12 16 21"></polyline></svg>,
+            Lock: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>,
+            X: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+            Sync: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>,
+            CloudOff: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 7h1.8a5 5 0 0 0 3.7 2.15M1 1l22 22"/></svg>
+        };
 
-  } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({status: "error", message: error.toString()}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
+        const compressImage = (file) => new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (e) => {
+                const img = new Image();
+                img.src = e.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_SIZE = 800; 
+                    let w = img.width, h = img.height;
+                    if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } 
+                    else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+                    canvas.width = w; canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', 0.6));
+                };
+            };
+        });
 
-function getOrCreateFolder(parent, folderName) {
-  var folders = parent.getFoldersByName(folderName);
-  if (folders.hasNext()) {
-    return folders.next();
-  } else {
-    return parent.createFolder(folderName);
-  }
-}
+        const Modal = ({ isOpen, type, title, message, onClose }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-fade-in">
+                    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose}></div>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6 relative z-20 text-center border-2 border-white/20">
+                        <div className={`mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-4 ${type === 'success' ? 'bg-emerald-100 text-emerald-600' : type === 'ai' ? 'bg-blue-100 text-blue-600' : 'bg-rose-100 text-rose-600'}`}>
+                            {type === 'success' ? <Icons.Check className="w-8 h-8" /> : type === 'ai' ? <Icons.FileText className="w-8 h-8" /> : <Icons.Alert className="w-8 h-8" />}
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-2">{title}</h3>
+                        <p className="text-slate-500 text-sm mb-6 leading-relaxed whitespace-pre-wrap">{message}</p>
+                        <button onClick={onClose} className={`w-full py-3.5 rounded-xl font-bold text-white shadow-lg active:scale-95 ${type === 'success' ? 'bg-emerald-600' : type === 'ai' ? 'bg-blue-600' : 'bg-rose-600'}`}>OK</button>
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminGate = ({ isOpen, onClose, onSuccess }) => {
+            const [pin, setPin] = useState('');
+            const [error, setError] = useState(false);
+            useEffect(() => { if(isOpen) { setPin(''); setError(false); } }, [isOpen]);
+            const handleNum = (num) => {
+                if (pin.length < 4) {
+                    const newPin = pin + num;
+                    setPin(newPin);
+                    if (newPin.length === 4) {
+                        if (newPin === ADMIN_PIN) { setTimeout(onSuccess, 200); } 
+                        else { setError(true); setTimeout(() => { setPin(''); setError(false); }, 500); }
+                    }
+                }
+            };
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[300] bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-fade-in">
+                    <div className="w-full max-w-xs bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-white font-bold text-lg flex items-center gap-2"><Icons.Lock className="w-5 h-5 text-blue-400"/> Setup Locked</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-white"><Icons.X className="w-6 h-6"/></button>
+                        </div>
+                        <div className="flex justify-center gap-3 mb-8">
+                            {[0,1,2,3].map(i => (<div key={i} className={`w-4 h-4 rounded-full transition-all ${i < pin.length ? (error ? 'bg-rose-500' : 'bg-blue-500') : 'bg-slate-600'}`}></div>))}
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                            {[1,2,3,4,5,6,7,8,9].map(n => (<button key={n} onClick={() => handleNum(n)} className="bg-slate-700 hover:bg-slate-600 text-white font-bold text-xl py-4 rounded-xl shadow-lg active:scale-95">{n}</button>))}
+                            <div className="col-start-2"><button onClick={() => handleNum(0)} className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold text-xl py-4 rounded-xl shadow-lg active:scale-95">0</button></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        function App() {
+            const [view, setView] = useState('entry');
+            const [txnType, setTxnType] = useState('payment');
+            const [amount, setAmount] = useState('');
+            const [companyName, setCompanyName] = useState(localStorage.getItem('fin_company') || '');
+            const [category, setCategory] = useState('');
+            const [description, setDescription] = useState('');
+            const [paymentMode, setPaymentMode] = useState('Cash');
+            const [photoData, setPhotoData] = useState(null);
+            
+            const [loading, setLoading] = useState(false);
+            const [modal, setModal] = useState(null);
+            const [showAdmin, setShowAdmin] = useState(false);
+            // Enhanced history state to include syncStatus: 'synced' | 'pending'
+            const [history, setHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('fin_history') || '[]'); } catch (e) { return []; } });
+            const [scriptUrl, setScriptUrl] = useState(localStorage.getItem('scriptUrl') || '');
+            const cameraRef = useRef(null);
+            const galleryRef = useRef(null);
+
+            const CATEGORIES_PAYMENT = ["Raw Materials", "Transport", "Salaries", "Utilities", "Maintenance", "Office Supplies", "Marketing", "Misc"];
+            const CATEGORIES_RECEIPT = ["Sales", "Service", "Refund", "Investment", "Loan", "Misc"];
+            const PAYMENT_MODES = ["Cash", "Cheque", "NEFT/RTGS"];
+            const currentCategories = txnType === 'payment' ? CATEGORIES_PAYMENT : CATEGORIES_RECEIPT;
+
+            const pendingCount = history.filter(h => h.syncStatus === 'pending').length;
+
+            useEffect(() => { localStorage.setItem('fin_history', JSON.stringify(history)); }, [history]);
+            useEffect(() => { localStorage.setItem('scriptUrl', scriptUrl); }, [scriptUrl]);
+            useEffect(() => { localStorage.setItem('fin_company', companyName); }, [companyName]);
+
+            // Auto-Sync when coming online
+            useEffect(() => {
+                const handleOnline = () => {
+                    if (pendingCount > 0) syncQueue();
+                };
+                window.addEventListener('online', handleOnline);
+                return () => window.removeEventListener('online', handleOnline);
+            }, [history]);
+
+            const syncQueue = async () => {
+                const pendingItems = history.filter(i => i.syncStatus === 'pending');
+                if(pendingItems.length === 0) return;
+
+                setLoading(true);
+                let syncedCount = 0;
+                let newHistory = [...history];
+
+                for (const item of pendingItems) {
+                    try {
+                        await fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(item) });
+                        // Update status in local array
+                        const index = newHistory.findIndex(h => h.id === item.id);
+                        if(index !== -1) {
+                            newHistory[index] = { ...newHistory[index], syncStatus: 'synced' };
+                        }
+                        syncedCount++;
+                    } catch(e) {
+                        console.error("Sync failed for item", item.id);
+                    }
+                }
+
+                setHistory(newHistory);
+                setLoading(false);
+                if(syncedCount > 0) {
+                    setModal({ type: 'success', title: 'Sync Complete', message: `${syncedCount} offline transactions uploaded.` });
+                }
+            };
+
+            const handlePhoto = async (e) => {
+                const file = e.target.files[0];
+                if(file) {
+                    setLoading(true);
+                    try { const data = await compressImage(file); setPhotoData(data); } 
+                    catch(err) { setModal({ type: 'error', title: 'Error', message: 'Failed to process photo.' }); }
+                    setLoading(false);
+                }
+            };
+
+            const handlePaste = async () => {
+                try {
+                    const items = await navigator.clipboard.read().catch(() => []);
+                    for (const item of items) {
+                        if (item.types.some(t => t.startsWith('image/'))) {
+                            const blob = await item.getType(item.types.find(t => t.startsWith('image/')));
+                            const reader = new FileReader();
+                            reader.onload = (e) => setPhotoData(e.target.result);
+                            reader.readAsDataURL(blob);
+                            return; 
+                        }
+                    }
+                    const text = await navigator.clipboard.readText();
+                    if (text) {
+                        setDescription(prev => prev ? prev + " | " + text : text);
+                        let modalMsg = 'Text content added to Remarks.';
+                        if (!amount) {
+                             const match = text.match(/(?:Rs\.?|INR|₹)?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(?!\d)/i);
+                             if(match && match[1]) {
+                                 const val = match[1].replace(/,/g, '');
+                                 if(!isNaN(val)) {
+                                     setAmount(val);
+                                     modalMsg += '\nAmount detected and set.';
+                                 }
+                             }
+                        }
+                        setModal({type:'ai', title: 'Text Pasted', message: modalMsg});
+                        return;
+                    }
+                    setModal({type:'error', title: 'Clipboard Empty', message: 'No image or text found.'});
+                } catch (err) {
+                    try {
+                        const text = await navigator.clipboard.readText();
+                        if (text) {
+                            setDescription(prev => prev ? prev + " | " + text : text);
+                            setModal({type:'success', title: 'Text Pasted', message: 'Text added to Remarks.'});
+                        } else {
+                             setModal({type:'error', title: 'Access Denied', message: 'Please allow clipboard permissions.'});
+                        }
+                    } catch (e) {
+                        setModal({type:'error', title: 'Access Denied', message: 'Browser blocked clipboard access.'});
+                    }
+                }
+            };
+
+            const handleSubmit = async () => {
+                if (!amount || isNaN(amount)) return setModal({ type: 'error', title: 'Invalid Amount', message: 'Enter a valid number.' });
+                if (!companyName) return setModal({ type: 'error', title: 'Setup Missing', message: 'Go to Setup and enter Company Name.' });
+                if (!scriptUrl) return setModal({ type: 'error', title: 'Setup Missing', message: 'Go to Setup and add Google Script URL.' });
+                if (!category) return setModal({ type: 'error', title: 'Category Missing', message: 'Select a category.' });
+
+                setLoading(true);
+                const timestamp = new Date().toLocaleString();
+                
+                // Create payload with default pending status
+                const newItem = { 
+                    id: Date.now(),
+                    timestamp, 
+                    type: txnType, 
+                    amount: parseFloat(amount).toFixed(2), 
+                    company_name: companyName, 
+                    payment_mode: paymentMode, 
+                    category, 
+                    description, 
+                    image: photoData,
+                    syncStatus: 'pending' // Default state
+                };
+
+                let success = false;
+                try {
+                    await fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(newItem) });
+                    newItem.syncStatus = 'synced'; // Update to synced if successful
+                    success = true;
+                } catch (e) {
+                    console.log("Upload failed, saved to queue");
+                } 
+                
+                // Always save to history (Queue)
+                setHistory(prev => [newItem, ...prev]);
+                
+                // Reset Form
+                setAmount(''); setDescription(''); setPhotoData(null); setCategory(''); setPaymentMode('Cash');
+                setLoading(false);
+                
+                if (success) {
+                    setModal({ type: 'success', title: 'Saved', message: `${txnType === 'receipt' ? 'Receipt' : 'Payment'} uploaded successfully.` });
+                } else {
+                    setModal({ type: 'error', title: 'Saved Locally', message: 'Network offline. Added to Sync Queue.' });
+                }
+            };
+
+            const generateReport = () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                doc.text(`Financial Report - ${companyName}`, 14, 20);
+                const rows = history.map(h => [h.timestamp, h.type.toUpperCase(), h.company_name, `Rs. ${h.amount}`, h.category, h.syncStatus]);
+                doc.autoTable({ startY: 30, head: [["Time", "Type", "Entity", "Amount", "Category", "Sync"]], body: rows });
+                doc.save(`Finance_Report.pdf`);
+            };
+
+            const themeColor = txnType === 'payment' ? 'rose' : 'emerald';
+            const themeBg = txnType === 'payment' ? 'bg-rose-600' : 'bg-emerald-600';
+
+            return (
+                <div className="flex flex-col h-full max-w-md mx-auto bg-slate-50 md:border md:rounded-xl md:my-4 md:h-[95vh] shadow-2xl overflow-hidden">
+                    <Modal isOpen={!!modal} type={modal?.type} title={modal?.title} message={modal?.message} onClose={() => setModal(null)} />
+                    <AdminGate isOpen={showAdmin} onClose={() => setShowAdmin(false)} onSuccess={() => { setShowAdmin(false); setView('settings'); }} />
+                    
+                    {loading && (<div className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in"><div className="w-16 h-16 border-4 border-slate-600 rounded-full mb-4 relative"><div className="absolute top-0 left-0 w-full h-full border-4 border-t-transparent rounded-full animate-spin border-white"></div></div><h3 className="text-white font-bold">Syncing...</h3></div>)}
+
+                    <div className={`p-4 text-white shadow-lg shrink-0 ${themeBg} transition-colors duration-300`}>
+                        <div className="flex justify-between items-center mb-4">
+                            <div className="font-bold flex items-center gap-2">
+                                <div className="bg-white/20 p-1.5 rounded-lg"><Icons.Wallet className="w-5 h-5" /></div>
+                                <span className="tracking-wider text-lg">FinTrack</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {pendingCount > 0 && (
+                                    <button onClick={syncQueue} className="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg flex items-center gap-2 text-[10px] font-bold animate-pulse-slow border border-white/30">
+                                        <Icons.Sync className="w-3 h-3" />
+                                        <span>SYNC ({pendingCount})</span>
+                                    </button>
+                                )}
+                                <div className="text-right">
+                                    <div className="text-[10px] text-white/70 uppercase font-medium tracking-wider mb-0.5">Entity</div>
+                                    <div className="font-bold text-sm">{companyName || "Setup Required"}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex bg-black/20 p-1 rounded-xl"><button onClick={() => setTxnType('receipt')} className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-all ${txnType === 'receipt' ? 'bg-white text-emerald-600 shadow-sm' : 'text-white/60 hover:text-white'}`}><Icons.ArrowDown className="w-4 h-4" /> RECEIPTS</button><button onClick={() => setTxnType('payment')} className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-all ${txnType === 'payment' ? 'bg-white text-rose-600 shadow-sm' : 'text-white/60 hover:text-white'}`}><Icons.ArrowUp className="w-4 h-4" /> PAYMENTS</button></div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 pb-24">
+                        {view === 'entry' && (
+                            <div className="animate-fade-in space-y-4">
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Amount</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-slate-300">₹</span><input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="w-full pl-10 pr-4 py-4 bg-slate-50 rounded-xl text-3xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-slate-200 transition-all placeholder-slate-200" placeholder="0.00" inputMode="decimal"/></div></div>
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                                    <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Mode</label><div className="grid grid-cols-3 gap-2">{PAYMENT_MODES.map(mode => (<button key={mode} onClick={() => setPaymentMode(mode)} className={`py-2 px-1 rounded-lg text-[10px] font-bold border transition-all flex flex-col items-center justify-center gap-1 ${paymentMode === mode ? `bg-${themeColor}-50 border-${themeColor}-500 text-${themeColor}-700` : 'bg-slate-50 border-slate-200 text-slate-500'}`}>{paymentMode === mode && <Icons.Check className="w-3 h-3"/>}{mode}</button>))}</div></div>
+                                    <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Category</label><div className="flex flex-wrap gap-2">{currentCategories.map(cat => (<button key={cat} onClick={() => setCategory(cat)} className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${category === cat ? `bg-${themeColor}-50 border-${themeColor}-500 text-${themeColor}-700` : 'bg-white border-slate-200 text-slate-500'}`}>{cat}</button>))}</div></div>
+                                    <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Remarks</label><textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:border-slate-400 outline-none resize-none" placeholder="Details..." rows="2"></textarea></div>
+                                </div>
+                                <div className={`border-2 border-dashed rounded-2xl relative group overflow-hidden min-h-[140px] flex flex-col items-center justify-center transition-colors ${photoData ? 'border-slate-200' : 'border-slate-300 bg-slate-50'}`}>
+                                    {!photoData ? (
+                                        <div className="flex gap-2 w-full p-3">
+                                            <button onClick={() => cameraRef.current?.click()} className="flex-1 flex flex-col items-center justify-center bg-white border border-slate-200 py-4 rounded-xl shadow-sm hover:bg-slate-50"><Icons.Camera className="w-5 h-5 text-slate-400 mb-1"/><span className="text-[9px] font-bold text-slate-500">CAMERA</span><input type="file" ref={cameraRef} className="hidden" accept="image/*" capture="environment" onChange={handlePhoto}/></button>
+                                            <button onClick={() => galleryRef.current?.click()} className="flex-1 flex flex-col items-center justify-center bg-white border border-slate-200 py-4 rounded-xl shadow-sm hover:bg-slate-50"><Icons.Image className="w-5 h-5 text-slate-400 mb-1"/><span className="text-[9px] font-bold text-slate-500">GALLERY</span><input type="file" ref={galleryRef} className="hidden" accept="image/*" onChange={handlePhoto}/></button>
+                                            <button onClick={handlePaste} className="flex-1 flex flex-col items-center justify-center bg-white border border-slate-200 py-4 rounded-xl shadow-sm hover:bg-slate-50"><Icons.Clipboard className="w-5 h-5 text-slate-400 mb-1"/><span className="text-[9px] font-bold text-slate-500">PASTE</span></button>
+                                        </div>
+                                    ) : (
+                                        <div className="relative w-full h-full min-h-[200px]"><img src={photoData} className="absolute inset-0 w-full h-full object-cover"/><div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div><button onClick={() => setPhotoData(null)} className="absolute bottom-3 right-3 bg-white text-rose-600 px-3 py-1.5 rounded-lg text-xs font-bold shadow-lg flex items-center gap-2"><Icons.Trash className="w-3 h-3"/> Remove</button></div>
+                                    )}
+                                </div>
+                                <button onClick={handleSubmit} className={`w-full py-4 rounded-xl font-bold text-white shadow-xl active:scale-95 flex items-center justify-center gap-2 ${themeBg}`}><Icons.CloudUpload className="w-5 h-5"/>SAVE {txnType.toUpperCase()}</button>
+                            </div>
+                        )}
+
+                        {view === 'history' && (
+                            <div className="animate-fade-in space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="font-bold text-slate-700 text-lg">Transactions</h2>
+                                    <div className="flex gap-2">
+                                        {pendingCount > 0 && <button onClick={syncQueue} className="text-xs font-bold text-white bg-orange-500 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1 animate-pulse"><Icons.Sync className="w-3 h-3"/> Sync Now</button>}
+                                        <button onClick={generateReport} className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">PDF</button>
+                                    </div>
+                                </div>
+                                {history.length === 0 && <div className="text-center py-10 text-slate-400"><Icons.FileText className="w-12 h-12 mx-auto mb-2 opacity-20"/><p className="text-sm">No records.</p></div>}
+                                {history.map((item, i) => (
+                                    <div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col gap-2 relative overflow-hidden">
+                                        <div className={`absolute top-0 right-0 p-1.5 rounded-bl-xl ${item.syncStatus === 'synced' ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
+                                            {item.syncStatus === 'synced' ? <Icons.Check className="w-3 h-3"/> : <Icons.CloudOff className="w-3 h-3"/>}
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <div className={`p-3 rounded-full ${item.type === 'payment' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>{item.type === 'payment' ? <Icons.ArrowUp className="w-5 h-5"/> : <Icons.ArrowDown className="w-5 h-5"/>}</div>
+                                            <div className="flex-1">
+                                                <div className="flex justify-between items-start mb-1"><h4 className="font-bold text-slate-800">{item.company_name}</h4><span className={`font-mono font-bold ${item.type === 'payment' ? 'text-rose-600' : 'text-emerald-600'}`}>{item.type === 'payment' ? '-' : '+'}₹{item.amount}</span></div>
+                                                <div className="text-xs text-slate-400 flex items-center gap-2"><span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-semibold">{item.payment_mode}</span><span>• {item.category}</span></div>
+                                            </div>
+                                        </div>
+                                        {item.description && <div className="text-xs text-slate-500 italic bg-slate-50 p-2 rounded">"{item.description}"</div>}
+                                    </div>
+                                ))}
+                                <button onClick={() => {if(confirm('Clear history?')) setHistory([])}} className="w-full py-3 text-xs font-bold text-slate-400 hover:text-rose-500 transition-colors">Clear Local History</button>
+                            </div>
+                        )}
+
+                        {view === 'settings' && (
+                            <div className="animate-fade-in space-y-4">
+                                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                                    <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Icons.Settings className="w-5 h-5 text-slate-400"/> Secure Setup</h3>
+                                    <div className="space-y-4">
+                                        <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Company / Person Name</label><div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50"><Icons.Building className="w-5 h-5 text-slate-400"/><input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full bg-transparent outline-none text-slate-700 font-semibold" placeholder="Registered Name..." /></div><p className="text-[10px] text-slate-400 mt-2">This name is attached to all transactions.</p></div>
+                                        <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Google Apps Script URL</label><textarea value={scriptUrl} onChange={e => setScriptUrl(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none text-slate-600" rows="4" placeholder="https://script.google.com/macros/s/..."></textarea></div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="bg-white border-t border-slate-200 flex justify-around py-2 pb-safe fixed bottom-0 w-full max-w-md z-10">
+                        <button onClick={() => setView('entry')} className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${view === 'entry' ? 'text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}><Icons.Plus className="w-6 h-6"/><span className="text-[10px] font-bold uppercase">Entry</span></button>
+                        <button onClick={() => setView('history')} className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${view === 'history' ? 'text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}><Icons.FileText className="w-6 h-6"/><span className="text-[10px] font-bold uppercase">Log</span></button>
+                        <button onClick={() => setShowAdmin(true)} className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${view === 'settings' ? 'text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}><Icons.Settings className="w-6 h-6"/><span className="text-[10px] font-bold uppercase">Setup</span></button>
+                    </div>
+                </div>
+            );
+        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
