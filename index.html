@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FinTrack Pro</title>
+    <title>FinSnap</title>
     
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -37,7 +37,14 @@
         const ADMIN_PIN = "8888";
 
         const Icons = {
-            Wallet: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>,
+            // New Logo: FinSnap (Hexagon Shutter)
+            Logo: (p) => (
+                <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    <path d="M12 8v8" />
+                    <path d="M8 12h8" />
+                </svg>
+            ),
             ArrowUp: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>,
             ArrowDown: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>,
             Camera: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
@@ -54,7 +61,8 @@
             Lock: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>,
             X: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
             Sync: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>,
-            CloudOff: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 7h1.8a5 5 0 0 0 3.7 2.15M1 1l22 22"/></svg>
+            CloudOff: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 7h1.8a5 5 0 0 0 3.7 2.15M1 1l22 22"/></svg>,
+            Help: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         };
 
         const compressImage = (file) => new Promise((resolve) => {
@@ -126,6 +134,24 @@
                 </div>
             );
         };
+        
+        // Help Accordion Component
+        const HelpItem = ({ title, children }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            return (
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 mb-3">
+                    <button onClick={() => setIsOpen(!isOpen)} className="w-full flex justify-between items-center p-4 text-left font-bold text-slate-700 hover:bg-slate-100">
+                        <span>{title}</span>
+                        <Icons.ArrowDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    <div className={`overflow-hidden transition-all duration-300 ${isOpen ? 'max-h-96' : 'max-h-0'}`}>
+                        <div className="p-4 pt-0 text-sm text-slate-600 leading-relaxed border-t border-slate-100 mt-2">
+                            {children}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
         function App() {
             const [view, setView] = useState('entry');
@@ -140,7 +166,6 @@
             const [loading, setLoading] = useState(false);
             const [modal, setModal] = useState(null);
             const [showAdmin, setShowAdmin] = useState(false);
-            // Enhanced history state to include syncStatus: 'synced' | 'pending'
             const [history, setHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('fin_history') || '[]'); } catch (e) { return []; } });
             const [scriptUrl, setScriptUrl] = useState(localStorage.getItem('scriptUrl') || '');
             const cameraRef = useRef(null);
@@ -157,7 +182,6 @@
             useEffect(() => { localStorage.setItem('scriptUrl', scriptUrl); }, [scriptUrl]);
             useEffect(() => { localStorage.setItem('fin_company', companyName); }, [companyName]);
 
-            // Auto-Sync when coming online
             useEffect(() => {
                 const handleOnline = () => {
                     if (pendingCount > 0) syncQueue();
@@ -177,7 +201,6 @@
                 for (const item of pendingItems) {
                     try {
                         await fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(item) });
-                        // Update status in local array
                         const index = newHistory.findIndex(h => h.id === item.id);
                         if(index !== -1) {
                             newHistory[index] = { ...newHistory[index], syncStatus: 'synced' };
@@ -259,7 +282,6 @@
                 setLoading(true);
                 const timestamp = new Date().toLocaleString();
                 
-                // Create payload with default pending status
                 const newItem = { 
                     id: Date.now(),
                     timestamp, 
@@ -270,22 +292,20 @@
                     category, 
                     description, 
                     image: photoData,
-                    syncStatus: 'pending' // Default state
+                    syncStatus: 'pending' 
                 };
 
                 let success = false;
                 try {
                     await fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(newItem) });
-                    newItem.syncStatus = 'synced'; // Update to synced if successful
+                    newItem.syncStatus = 'synced'; 
                     success = true;
                 } catch (e) {
                     console.log("Upload failed, saved to queue");
                 } 
                 
-                // Always save to history (Queue)
                 setHistory(prev => [newItem, ...prev]);
                 
-                // Reset Form
                 setAmount(''); setDescription(''); setPhotoData(null); setCategory(''); setPaymentMode('Cash');
                 setLoading(false);
                 
@@ -318,8 +338,8 @@
                     <div className={`p-4 text-white shadow-lg shrink-0 ${themeBg} transition-colors duration-300`}>
                         <div className="flex justify-between items-center mb-4">
                             <div className="font-bold flex items-center gap-2">
-                                <div className="bg-white/20 p-1.5 rounded-lg"><Icons.Wallet className="w-5 h-5" /></div>
-                                <span className="tracking-wider text-lg">FinTrack</span>
+                                <div className="bg-white/20 p-1.5 rounded-lg"><Icons.Logo className="w-6 h-6" /></div>
+                                <span className="tracking-wider text-xl">FinSnap</span>
                             </div>
                             <div className="flex items-center gap-3">
                                 {pendingCount > 0 && (
@@ -389,6 +409,45 @@
                                 <button onClick={() => {if(confirm('Clear history?')) setHistory([])}} className="w-full py-3 text-xs font-bold text-slate-400 hover:text-rose-500 transition-colors">Clear Local History</button>
                             </div>
                         )}
+                        
+                        {view === 'help' && (
+                             <div className="animate-fade-in space-y-4 pb-20">
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
+                                    <h2 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><Icons.Help className="w-5 h-5 text-indigo-500"/> User Guide</h2>
+                                    <div className="space-y-3">
+                                         <HelpItem title="Making an Entry">
+                                             <ul className="list-disc pl-4 space-y-1">
+                                                 <li>Select <strong>Receipt</strong> (Green) or <strong>Payment</strong> (Red).</li>
+                                                 <li>Enter Amount (₹) and Mode (Cash/Cheque/NEFT).</li>
+                                                 <li>Choose a Category and add optional Remarks.</li>
+                                                 <li>Use Camera/Gallery to attach proof (Bill/Invoice).</li>
+                                             </ul>
+                                         </HelpItem>
+                                         <HelpItem title="Smart Paste Feature">
+                                             <p className="mb-2">Click the <strong>PASTE</strong> button to instantly attach copied content:</p>
+                                             <ul className="list-disc pl-4 space-y-1">
+                                                 <li><strong>Images:</strong> Pastes screenshot/image as evidence.</li>
+                                                 <li><strong>Text (SMS):</strong> Pastes text into Remarks.</li>
+                                                 <li><strong>Auto-Amount:</strong> If amount is empty, FinSnap detects money values in your copied SMS (e.g., "Rs. 500 debited") and fills the Amount box automatically.</li>
+                                             </ul>
+                                         </HelpItem>
+                                         <HelpItem title="Offline Sync">
+                                             <p>FinSnap works offline! Data is saved locally (Yellow Cloud icon).</p>
+                                             <p className="mt-2">When internet returns, a <strong>SYNC</strong> button appears at the top. Click it to upload all pending records at once.</p>
+                                         </HelpItem>
+                                         <HelpItem title="Initial Setup">
+                                             <p>Go to <strong>Setup</strong> (Bottom Right) to start.</p>
+                                             <p><strong>PIN:</strong> 8888</p>
+                                             <ul className="list-disc pl-4 space-y-1 mt-1">
+                                                 <li><strong>Entity Name:</strong> Your name or Company name.</li>
+                                                 <li><strong>Script URL:</strong> The Google Apps Script web app link for cloud storage.</li>
+                                             </ul>
+                                         </HelpItem>
+                                    </div>
+                                    <div className="text-center text-xs text-slate-400 mt-8">FinSnap v1.0 • Secure Financial Logging</div>
+                                </div>
+                            </div>
+                        )}
 
                         {view === 'settings' && (
                             <div className="animate-fade-in space-y-4">
@@ -406,6 +465,7 @@
                     <div className="bg-white border-t border-slate-200 flex justify-around py-2 pb-safe fixed bottom-0 w-full max-w-md z-10">
                         <button onClick={() => setView('entry')} className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${view === 'entry' ? 'text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}><Icons.Plus className="w-6 h-6"/><span className="text-[10px] font-bold uppercase">Entry</span></button>
                         <button onClick={() => setView('history')} className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${view === 'history' ? 'text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}><Icons.FileText className="w-6 h-6"/><span className="text-[10px] font-bold uppercase">Log</span></button>
+                        <button onClick={() => setView('help')} className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${view === 'help' ? 'text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}><Icons.Help className="w-6 h-6"/><span className="text-[10px] font-bold uppercase">Help</span></button>
                         <button onClick={() => setShowAdmin(true)} className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${view === 'settings' ? 'text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}><Icons.Settings className="w-6 h-6"/><span className="text-[10px] font-bold uppercase">Setup</span></button>
                     </div>
                 </div>
